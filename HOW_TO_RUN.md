@@ -20,10 +20,10 @@ This guide provides **every exact command** to run, test, and inspect all output
 
 ## Step 1: Open PowerShell & Activate the Virtual Environment
 
-Open **Windows PowerShell** (or the integrated terminal inside your IDE) and run:
+Open **Windows PowerShell** inside the project root (`house-price-predictor/`) and run:
 
 ```powershell
-cd "c:\Users\manib\Desktop\protine\ai projects\home application\house-price-predictor"
+cd house-price-predictor
 .\venv\Scripts\activate
 ```
 

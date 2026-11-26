@@ -84,7 +84,7 @@ house-price-predictor/
 
 ### 1. Activate the Virtual Environment
 ```powershell
-cd "c:\Users\manib\Desktop\protine\ai projects\home application\house-price-predictor"
+cd house-price-predictor
 .\venv\Scripts\activate
 ```
 

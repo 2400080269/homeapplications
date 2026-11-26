@@ -1,28 +1,46 @@
-# Environments
+# Virtual Environments
 venv/
 .venv/
 env/
+ENV/
+conda-meta/
 
-# Python cache
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+*.env
+.secrets/
+*.key
+*.pem
+
+# Python Cache & Test Artifacts
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
 
-# Jupyter Notebook checkpoints & local sandbox configs
+# Jupyter Notebook Checkpoints & Local Configs
 .ipynb_checkpoints/
 .ipython/
 .jupyter/
 
-# Datasets & Model Binaries (auto-generated via train.py)
-data/*.pkz
+# Datasets & Trained Model Binaries (reproducible via `python train.py`)
+data/
 *.pkl
 *.joblib
+*.h5
+*.onnx
 
-# Keep metadata JSON and portfolio figures tracked
+# Keep metadata JSON and diagnostic figures tracked
 !artifacts/model_metadata.json
 !figures/*.png
 
-# OS files
+# Logs & OS Metadata
+*.log
+logs/
 .DS_Store
 Thumbs.db
