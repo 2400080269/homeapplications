@@ -5,9 +5,14 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
+
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+except ImportError:
+    px = None
+    go = None
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -166,7 +171,7 @@ def main() -> None:
 
         with col_map:
             st.subheader("Geospatial Context (Selected Point vs. California Blocks)")
-            fig_map = px.scatter_mapbox(
+            fig_map = px.scatter_map(
                 ref_df,
                 lat="Latitude",
                 lon="Longitude",
@@ -175,22 +180,22 @@ def main() -> None:
                 opacity=0.5,
                 zoom=4.8,
                 center={"lat": latitude, "lon": longitude},
-                mapbox_style="carto-positron",
+                map_style="carto-positron",
                 labels={"MedHouseVal": "Value ($100k)"},
                 height=440,
             )
             fig_map.add_trace(
-                go.Scattermapbox(
+                go.Scattermap(
                     lat=[latitude],
                     lon=[longitude],
                     mode="markers",
-                    marker=go.scattermapbox.Marker(size=16, color="red"),
+                    marker=go.scattermap.Marker(size=16, color="red"),
                     name="Selected Target Block",
                     text=[f"Predicted: ${result['predicted_price_usd']:,.0f}"],
                 )
             )
             fig_map.update_layout(margin={"r": 0, "t": 10, "l": 0, "b": 0})
-            st.plotly_chart(fig_map, use_container_width=True)
+            st.plotly_chart(fig_map, width="stretch")
 
         with col_shap:
             st.subheader("Local TreeSHAP Valuation Drivers")
@@ -211,18 +216,18 @@ def main() -> None:
                     labels={"shap_impact_usd": "SHAP Impact on Price ($USD)", "feature": "Feature"},
                     height=440,
                 )
-                st.plotly_chart(fig_shap, use_container_width=True)
+                st.plotly_chart(fig_shap, width="stretch")
 
     with tab_benchmark:
         st.subheader("5-Fold Cross-Validation & Holdout Test Benchmark")
         if "benchmarks" in metadata:
             bench_df = pd.DataFrame(metadata["benchmarks"])
-            st.dataframe(bench_df, use_container_width=True, hide_index=True)
+            st.dataframe(bench_df, width="stretch", hide_index=True)
 
         st.subheader("Slice-Based Error Analysis (Holdout Test Set)")
         if "slice_errors" in metadata:
             slice_df = pd.DataFrame(metadata["slice_errors"])
-            st.dataframe(slice_df, use_container_width=True, hide_index=True)
+            st.dataframe(slice_df, width="stretch", hide_index=True)
 
     with tab_explain:
         st.subheader("Saved Diagnostic & Explainability Plots")
@@ -241,7 +246,7 @@ def main() -> None:
                     title, fname = fig_files[idx + col_idx]
                     fpath = FIGURES_DIR / fname
                     if fpath.exists():
-                        cols[col_idx].image(str(fpath), caption=title, use_container_width=True)
+                        cols[col_idx].image(str(fpath), caption=title, width="stretch")
 
 
 if __name__ == "__main__":
