@@ -1,87 +1,101 @@
-"""
-Inference script demonstrating how to load the trained XGBoost model and StandardScaler
-to predict California median house prices for custom input features.
-"""
+"""CLI inference script showing point predictions, 90% CQR intervals, and local SHAP drivers."""
 
-import os
-import joblib
-import pandas as pd
-import numpy as np
+import argparse
+import json
+from typing import Any, Dict, List
 
-def predict_house_price(custom_inputs=None):
-    # 1. Paths
-    model_path = "house_price_model.pkl"
-    scaler_path = "scaler.pkl"
+from src.inference import HousePricePredictor
 
-    if not os.path.exists(model_path) or not os.path.exists(scaler_path):
-        raise FileNotFoundError("Model or scaler not found. Please run train.py first.")
+DEFAULT_SAMPLES: List[Dict[str, Any]] = [
+    {
+        "Label": "San Francisco (High Income Coastal)",
+        "MedInc": 8.3252,
+        "HouseAge": 41.0,
+        "AveRooms": 6.984127,
+        "AveBedrms": 1.023810,
+        "Population": 322.0,
+        "AveOccup": 2.555556,
+        "Latitude": 37.88,
+        "Longitude": -122.23,
+    },
+    {
+        "Label": "Los Angeles (Urban Middle Income)",
+        "MedInc": 4.2500,
+        "HouseAge": 38.0,
+        "AveRooms": 5.300000,
+        "AveBedrms": 1.060000,
+        "Population": 1200.0,
+        "AveOccup": 2.850000,
+        "Latitude": 34.05,
+        "Longitude": -118.24,
+    },
+    {
+        "Label": "Fresno (Central Valley Inland)",
+        "MedInc": 1.8500,
+        "HouseAge": 25.0,
+        "AveRooms": 4.450000,
+        "AveBedrms": 1.050000,
+        "Population": 1450.0,
+        "AveOccup": 3.400000,
+        "Latitude": 36.74,
+        "Longitude": -119.79,
+    },
+]
 
-    # 2. Load model and scaler
-    model = joblib.load(model_path)
-    scaler = joblib.load(scaler_path)
 
-    # 3. Default sample input if none provided
-    # Features: ['MedInc', 'HouseAge', 'AveRooms', 'AveBedrms', 'Population', 'AveOccup', 'Latitude', 'Longitude']
-    if custom_inputs is None:
-        custom_inputs = pd.DataFrame([
-            {
-                "MedInc": 8.3252,       # $83,252 median income
-                "HouseAge": 41.0,       # 41 years old
-                "AveRooms": 6.984127,   # ~7 rooms avg
-                "AveBedrms": 1.023810,  # ~1 bedroom avg
-                "Population": 322.0,    # 322 residents
-                "AveOccup": 2.555556,   # ~2.6 people per household
-                "Latitude": 37.88,      # Bay Area coordinates
-                "Longitude": -122.23
-            },
-            {
-                "MedInc": 3.8462,       # $38,462 median income
-                "HouseAge": 52.0,       # 52 years old
-                "AveRooms": 6.281853,
-                "AveBedrms": 1.081081,
-                "Population": 565.0,
-                "AveOccup": 2.181467,
-                "Latitude": 37.85,
-                "Longitude": -122.25
-            },
-            {
-                "MedInc": 1.6875,       # $16,875 median income (lower income area)
-                "HouseAge": 25.0,
-                "AveRooms": 4.120000,
-                "AveBedrms": 1.050000,
-                "Population": 1150.0,
-                "AveOccup": 3.200000,
-                "Latitude": 36.50,
-                "Longitude": -119.50
-            }
-        ])
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run house price inference with CQR uncertainty and TreeSHAP attributions."
+    )
+    parser.add_argument(
+        "--json",
+        type=str,
+        default=None,
+        help="Optional JSON string representing one property dict or list of dicts.",
+    )
+    return parser.parse_args()
 
-    print("=" * 70)
-    print("California House Price Prediction Inference")
-    print("=" * 70)
-    print("\nInput Housing Profiles:")
-    print(custom_inputs.to_string(index=True))
 
-    # 4. Scale inputs using the pre-fitted scaler
-    scaled_inputs = scaler.transform(custom_inputs)
+def main() -> None:
+    args = parse_args()
+    predictor = HousePricePredictor()
 
-    # 5. Predict using the trained model
-    predicted_val_100k = model.predict(scaled_inputs)
+    if args.json:
+        records = json.loads(args.json)
+        if isinstance(records, dict):
+            records = [records]
+        labels = [f"Custom Input #{i + 1}" for i in range(len(records))]
+    else:
+        labels = [item["Label"] for item in DEFAULT_SAMPLES]
+        records = [{k: v for k, v in item.items() if k != "Label"} for item in DEFAULT_SAMPLES]
 
-    # Convert from $100k units to actual USD
-    predicted_usd = predicted_val_100k * 100000
+    results = predictor.predict(records, include_shap=True, top_k_drivers=5)
 
-    results = custom_inputs.copy()
-    results["Predicted_MedHouseVal ($100k)"] = np.round(predicted_val_100k, 3)
-    results["Estimated_Price ($USD)"] = [f"${val:,.2f}" for val in predicted_usd]
+    print("=" * 78)
+    print(f"California House Price Predictor — Inference ({predictor.champion_name})")
+    print("=" * 78)
 
-    print("\n" + "=" * 70)
-    print("Prediction Results:")
-    print("=" * 70)
-    print(results[["MedInc", "HouseAge", "AveRooms", "Predicted_MedHouseVal ($100k)", "Estimated_Price ($USD)"]].to_string(index=True))
-    print("=" * 70)
+    for label, res in zip(labels, results):
+        print(f"\n[{label}]")
+        print(
+            f"  Estimated Value:   ${res['predicted_price_usd']:,.2f} "
+            f"({res['predicted_value_100k']:.3f} in $100k)"
+        )
+        print(
+            f"  90% CQR Interval:  [${res['interval_90_low_usd']:,.2f}  --  "
+            f"${res['interval_90_high_usd']:,.2f}]"
+        )
+        if res.get("top_drivers"):
+            print("  Top 5 TreeSHAP Drivers:")
+            for drv in res["top_drivers"]:
+                val = drv["shap_impact_usd"]
+                sign = "+" if val >= 0 else "-"
+                print(
+                    f"    - {drv['feature']:<22s} (val={drv['feature_value']:>9.3f}) -> "
+                    f"{sign}${abs(val):,.2f}"
+                )
+    print("\n" + "=" * 78)
 
-    return results
 
 if __name__ == "__main__":
-    predict_house_price()
+    main()

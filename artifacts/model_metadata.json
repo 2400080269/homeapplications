@@ -1,0 +1,345 @@
+{
+  "trained_at_utc": "2026-11-26T08:20:28.350201+00:00",
+  "dataset": "California Housing (20,640 block groups, 8 raw features)",
+  "engineered_feature_count": 29,
+  "engineered_features": [
+    "MedInc",
+    "HouseAge",
+    "AveRooms",
+    "AveBedrms",
+    "Population",
+    "AveOccup",
+    "Latitude",
+    "Longitude",
+    "BedroomsPerRoom",
+    "PeoplePerRoom",
+    "HouseholdsEst",
+    "IncomePerRoom",
+    "IncomePerPerson",
+    "LogPopulation",
+    "LogAveOccup",
+    "DistSFKm",
+    "DistSJKm",
+    "DistLAKm",
+    "DistSDKm",
+    "DistSacKm",
+    "MinDistToHubKm",
+    "MinDistToCoastKm",
+    "GeoRot30X",
+    "GeoRot30Y",
+    "GeoRot45X",
+    "GeoRot45Y",
+    "GeoClusterMinDistKm",
+    "SpatialCompsPrice",
+    "SpatialCompsPriceStd"
+  ],
+  "data_quality": {
+    "n_rows": 20640,
+    "n_columns": 9,
+    "total_missing": 0,
+    "missing_by_column": {
+      "MedInc": 0,
+      "HouseAge": 0,
+      "AveRooms": 0,
+      "AveBedrms": 0,
+      "Population": 0,
+      "AveOccup": 0,
+      "Latitude": 0,
+      "Longitude": 0,
+      "MedHouseVal": 0
+    },
+    "duplicate_rows": 0,
+    "target_capped_count": 992,
+    "target_capped_pct": 4.8062015503875966,
+    "age_capped_count": 1273,
+    "age_capped_pct": 6.167635658914729,
+    "extreme_ave_rooms_gt_20": 69,
+    "extreme_ave_bedrms_gt_5": 45,
+    "extreme_ave_occup_gt_15": 19,
+    "target_stats": {
+      "mean": 2.0685581690891475,
+      "std": 1.1539561587441385,
+      "min": 0.14999,
+      "median": 1.797,
+      "max": 5.00001
+    }
+  },
+  "champion_model": "Stacked Ensemble (XGB+LGBM+RF)",
+  "xgb_best_params": {
+    "n_estimators": 255,
+    "max_depth": 7,
+    "learning_rate": 0.041370163673017685,
+    "subsample": 0.8299820534447641,
+    "colsample_bytree": 0.8165865559879191,
+    "min_child_weight": 1,
+    "reg_alpha": 0.07158714383119803,
+    "reg_lambda": 0.004809461967501573
+  },
+  "lgb_best_params": {
+    "n_estimators": 342,
+    "num_leaves": 41,
+    "max_depth": 8,
+    "learning_rate": 0.04806098738690288,
+    "subsample": 0.6759433986826365,
+    "colsample_bytree": 0.9313515510738892,
+    "min_child_samples": 36,
+    "reg_alpha": 0.002463934101677248,
+    "reg_lambda": 0.055682627730894205
+  },
+  "cqr_q_hat": 0.05494320950444882,
+  "cqr_evaluation": {
+    "empirical_coverage": 0.9018895348837209,
+    "mean_interval_width_100k": 1.136895197559177,
+    "median_interval_width_100k": 0.9727582931518555
+  },
+  "benchmarks": [
+    {
+      "Model": "Stacked Ensemble (XGB+LGBM+RF)",
+      "CV_RMSE_Mean": 0.4032,
+      "CV_RMSE_Std": 0.0112,
+      "CV_R2_Mean": 0.8781,
+      "Test_RMSE": 0.4038,
+      "RMSE_CI95_Low": 0.3847,
+      "RMSE_CI95_High": 0.4264,
+      "Test_MAE": 0.2535,
+      "Test_MedAE": 0.1471,
+      "Test_MAPE_pct": 14.51,
+      "Test_R2": 0.8765,
+      "R2_CI95_Low": 0.8627,
+      "R2_CI95_High": 0.8883,
+      "CV_Time_Sec": 160.83
+    },
+    {
+      "Model": "LightGBM (Optuna-Tuned)",
+      "CV_RMSE_Mean": 0.4066,
+      "CV_RMSE_Std": 0.0113,
+      "CV_R2_Mean": 0.876,
+      "Test_RMSE": 0.4063,
+      "RMSE_CI95_Low": 0.3874,
+      "RMSE_CI95_High": 0.4283,
+      "Test_MAE": 0.2572,
+      "Test_MedAE": 0.1529,
+      "Test_MAPE_pct": 14.61,
+      "Test_R2": 0.8749,
+      "R2_CI95_Low": 0.861,
+      "R2_CI95_High": 0.8868,
+      "CV_Time_Sec": 8.37
+    },
+    {
+      "Model": "XGBoost (Optuna-Tuned)",
+      "CV_RMSE_Mean": 0.4061,
+      "CV_RMSE_Std": 0.0103,
+      "CV_R2_Mean": 0.8763,
+      "Test_RMSE": 0.4065,
+      "RMSE_CI95_Low": 0.3872,
+      "RMSE_CI95_High": 0.4286,
+      "Test_MAE": 0.255,
+      "Test_MedAE": 0.1484,
+      "Test_MAPE_pct": 14.66,
+      "Test_R2": 0.8748,
+      "R2_CI95_Low": 0.861,
+      "R2_CI95_High": 0.8869,
+      "CV_Time_Sec": 12.93
+    },
+    {
+      "Model": "Random Forest (Engineered)",
+      "CV_RMSE_Mean": 0.4211,
+      "CV_RMSE_Std": 0.011,
+      "CV_R2_Mean": 0.867,
+      "Test_RMSE": 0.4218,
+      "RMSE_CI95_Low": 0.4015,
+      "RMSE_CI95_High": 0.4424,
+      "Test_MAE": 0.2645,
+      "Test_MedAE": 0.1555,
+      "Test_MAPE_pct": 15.11,
+      "Test_R2": 0.8652,
+      "R2_CI95_Low": 0.8504,
+      "R2_CI95_High": 0.8784,
+      "CV_Time_Sec": 61.29
+    },
+    {
+      "Model": "Ridge Regression (Engineered)",
+      "CV_RMSE_Mean": 0.4627,
+      "CV_RMSE_Std": 0.0164,
+      "CV_R2_Mean": 0.8394,
+      "Test_RMSE": 0.4599,
+      "RMSE_CI95_Low": 0.4414,
+      "RMSE_CI95_High": 0.48,
+      "Test_MAE": 0.3044,
+      "Test_MedAE": 0.1956,
+      "Test_MAPE_pct": 17.25,
+      "Test_R2": 0.8398,
+      "R2_CI95_Low": 0.8256,
+      "R2_CI95_High": 0.852,
+      "CV_Time_Sec": 4.86
+    },
+    {
+      "Model": "Linear Regression (Raw)",
+      "CV_RMSE_Mean": 0.7215,
+      "CV_RMSE_Std": 0.0074,
+      "CV_R2_Mean": 0.6098,
+      "Test_RMSE": 0.7428,
+      "RMSE_CI95_Low": 0.7109,
+      "RMSE_CI95_High": 0.7823,
+      "Test_MAE": 0.5364,
+      "Test_MedAE": 0.412,
+      "Test_MAPE_pct": 32.59,
+      "Test_R2": 0.582,
+      "R2_CI95_Low": 0.5397,
+      "R2_CI95_High": 0.6122,
+      "CV_Time_Sec": 0.12
+    },
+    {
+      "Model": "Dummy Baseline (Mean)",
+      "CV_RMSE_Mean": 1.1552,
+      "CV_RMSE_Std": 0.0076,
+      "CV_R2_Mean": -0.0002,
+      "Test_RMSE": 1.1488,
+      "RMSE_CI95_Low": 1.1225,
+      "RMSE_CI95_High": 1.1747,
+      "Test_MAE": 0.9091,
+      "Test_MedAE": 0.7595,
+      "Test_MAPE_pct": 62.98,
+      "Test_R2": -0.0,
+      "R2_CI95_Low": -0.0012,
+      "R2_CI95_High": -0.0,
+      "CV_Time_Sec": 0.07
+    }
+  ],
+  "slice_errors": [
+    {
+      "Slice": "Target: Uncensored (< $500k)",
+      "Count": 3945,
+      "Share_pct": 95.6,
+      "RMSE": 0.3814,
+      "MAE": 0.2453,
+      "R2": 0.8489
+    },
+    {
+      "Slice": "Target: Censored Ceiling (>= $500k)",
+      "Count": 183,
+      "Share_pct": 4.4,
+      "RMSE": 0.7358,
+      "MAE": 0.4316,
+      "R2": NaN
+    },
+    {
+      "Slice": "Income: Low (MedInc < 2.5)",
+      "Count": 959,
+      "Share_pct": 23.2,
+      "RMSE": 0.3965,
+      "MAE": 0.2082,
+      "R2": 0.6965
+    },
+    {
+      "Slice": "Income: Middle (2.5 <= MedInc <= 5.0)",
+      "Count": 2316,
+      "Share_pct": 56.1,
+      "RMSE": 0.3914,
+      "MAE": 0.2493,
+      "R2": 0.819
+    },
+    {
+      "Slice": "Income: High (MedInc > 5.0)",
+      "Count": 853,
+      "Share_pct": 20.7,
+      "RMSE": 0.4431,
+      "MAE": 0.3161,
+      "R2": 0.8337
+    },
+    {
+      "Slice": "Geography: Coastal Belt (<= 25 km)",
+      "Count": 1722,
+      "Share_pct": 41.7,
+      "RMSE": 0.4642,
+      "MAE": 0.3008,
+      "R2": 0.8514
+    },
+    {
+      "Slice": "Geography: Inland (> 25 km)",
+      "Count": 2406,
+      "Share_pct": 58.3,
+      "RMSE": 0.3543,
+      "MAE": 0.2197,
+      "R2": 0.8671
+    },
+    {
+      "Slice": "Housing Age: Newer (< 35 yrs)",
+      "Count": 2692,
+      "Share_pct": 65.2,
+      "RMSE": 0.4139,
+      "MAE": 0.2641,
+      "R2": 0.8533
+    },
+    {
+      "Slice": "Housing Age: Older (>= 35 yrs)",
+      "Count": 1436,
+      "Share_pct": 34.8,
+      "RMSE": 0.3841,
+      "MAE": 0.2337,
+      "R2": 0.9064
+    }
+  ],
+  "top_shap_features": [
+    {
+      "Feature": "SpatialCompsPrice",
+      "MeanAbsSHAP": 0.5290905237197876
+    },
+    {
+      "Feature": "IncomePerPerson",
+      "MeanAbsSHAP": 0.1613893359899521
+    },
+    {
+      "Feature": "MinDistToCoastKm",
+      "MeanAbsSHAP": 0.06823094934225082
+    },
+    {
+      "Feature": "MedInc",
+      "MeanAbsSHAP": 0.06702404469251633
+    },
+    {
+      "Feature": "GeoRot45X",
+      "MeanAbsSHAP": 0.059731487184762955
+    },
+    {
+      "Feature": "BedroomsPerRoom",
+      "MeanAbsSHAP": 0.05823395773768425
+    },
+    {
+      "Feature": "DistLAKm",
+      "MeanAbsSHAP": 0.04954984411597252
+    },
+    {
+      "Feature": "AveRooms",
+      "MeanAbsSHAP": 0.0494331456720829
+    },
+    {
+      "Feature": "PeoplePerRoom",
+      "MeanAbsSHAP": 0.03541222959756851
+    },
+    {
+      "Feature": "Latitude",
+      "MeanAbsSHAP": 0.023141823709011078
+    },
+    {
+      "Feature": "HouseAge",
+      "MeanAbsSHAP": 0.021806538105010986
+    },
+    {
+      "Feature": "SpatialCompsPriceStd",
+      "MeanAbsSHAP": 0.02117203176021576
+    },
+    {
+      "Feature": "MinDistToHubKm",
+      "MeanAbsSHAP": 0.019562575966119766
+    },
+    {
+      "Feature": "Longitude",
+      "MeanAbsSHAP": 0.0187381599098444
+    },
+    {
+      "Feature": "DistSJKm",
+      "MeanAbsSHAP": 0.016950644552707672
+    }
+  ]
+}

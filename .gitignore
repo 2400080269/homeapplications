@@ -7,12 +7,21 @@ env/
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
 
-# Jupyter Notebook checkpoints
+# Jupyter Notebook checkpoints & local sandbox configs
 .ipynb_checkpoints/
+.ipython/
+.jupyter/
 
-# Models and artifacts (optional or track as needed)
-# *.pkl
+# Datasets & Model Binaries (auto-generated via train.py)
+data/*.pkz
+*.pkl
+*.joblib
+
+# Keep metadata JSON and portfolio figures tracked
+!artifacts/model_metadata.json
+!figures/*.png
 
 # OS files
 .DS_Store

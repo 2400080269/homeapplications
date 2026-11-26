@@ -1,153 +1,249 @@
-import os
+"""CLI entrypoint for training, Optuna tuning, CQR calibration, evaluation, and artifact export."""
+
+import argparse
+import json
+from datetime import datetime, timezone
+from typing import Any, Dict
+
 import joblib
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from sklearn.datasets import fetch_california_housing
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-import xgboost as xgb
+from sklearn.ensemble import StackingRegressor
+
+from src.config import (
+    ARTIFACTS_DIR,
+    FIGURES_DIR,
+    METADATA_PATH,
+    MODEL_PIPELINE_PATH,
+    QUANTILE_HIGH_PATH,
+    QUANTILE_LOW_PATH,
+    TrainingConfig,
+)
+from src.data_loader import (
+    create_train_test_split,
+    inspect_data_quality,
+    load_california_housing_data,
+)
+from src.evaluation import (
+    bootstrap_metric_cis,
+    compute_and_plot_shap,
+    compute_regression_metrics,
+    evaluate_conformal_intervals,
+    plot_conformal_intervals,
+    plot_diagnostics_suite,
+    plot_model_comparison,
+    plot_slice_errors,
+    slice_error_analysis,
+)
+from src.modeling import (
+    _prepare_pretransformed_folds,
+    build_candidate_pipelines,
+    cross_validate_pipeline,
+    train_conformal_quantile_intervals,
+    tune_lightgbm_optuna,
+    tune_xgboost_optuna,
+)
 
 
-def save_figure(fig, filename):
-    fig.tight_layout()
-    file_path = os.path.join("figures", filename)
-    fig.savefig(file_path, dpi=200)
-    plt.close(fig)
-    print(f"  --> Saved: {file_path}")
-
-
-def main():
-    print("=" * 60)
-    print("California House Price Prediction Pipeline")
-    print("=" * 60)
-
-    # 1. Load Data
-    print("\n[Step 1] Loading California Housing Dataset...")
-    data_dir = os.path.join(os.path.dirname(__file__), "data") if "__file__" in locals() else "./data"
-    os.makedirs(data_dir, exist_ok=True)
-    housing = fetch_california_housing(data_home=data_dir, as_frame=True)
-    df = housing.frame
-    print(f"Dataset shape: {df.shape[0]} rows, {df.shape[1]} columns")
-    print(f"Features: {list(housing.feature_names)}")
-    print(f"Target: {housing.target_names[0]} (Median House Value in $100k)")
-
-    # Check for missing values
-    missing_counts = df.isnull().sum()
-    print(f"Missing values count across features:\n{missing_counts[missing_counts > 0] if missing_counts.sum() > 0 else 'No missing values found.'}")
-
-    # Create directory for figures if it doesn't exist
-    os.makedirs("figures", exist_ok=True)
-    os.makedirs("models", exist_ok=True)
-
-    # 2. Preprocessing
-    print("\n[Step 2] Splitting Data & Preprocessing...")
-    X = df[housing.feature_names]
-    y = df[housing.target_names[0]]
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Train and benchmark California House Price Prediction pipelines."
     )
-    print(f"Training set: {X_train.shape[0]} samples")
-    print(f"Testing set: {X_test.shape[0]} samples")
+    parser.add_argument(
+        "--trials",
+        type=int,
+        default=15,
+        help="Number of Optuna hyperparameter tuning trials per boosted model (default: 15).",
+    )
+    parser.add_argument(
+        "--bootstrap",
+        type=int,
+        default=1000,
+        help="Number of bootstrap resamples for 95%% confidence intervals (default: 1000).",
+    )
+    return parser.parse_args()
 
-    # Scaling
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-    print("StandardScaler fitted on training data and applied to train and test sets.")
 
-    # 3. Model Training & Evaluation
-    print("\n[Step 3] Training Models...")
+def main() -> None:
+    args = parse_args()
+    config = TrainingConfig(optuna_trials=args.trials, n_bootstrap=args.bootstrap)
 
-    models = {
-        "Multiple Linear Regression": LinearRegression(),
-        "Random Forest Regressor": RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1),
-        "XGBoost Regressor": xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100, random_state=42)
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+
+    print("=" * 72)
+    print("California House Price Predictor — Advanced End-to-End Training Pipeline")
+    print("=" * 72)
+
+    # 1. Data Loading & Audit
+    print("\n[1/7] Loading dataset & auditing data quality...")
+    df, raw_features, target_col = load_california_housing_data()
+    quality = inspect_data_quality(df)
+    print(
+        f"  Samples: {quality['n_rows']:,} | Columns: {quality['n_columns']} | "
+        f"Missing: {quality['total_missing']} | Duplicates: {quality['duplicate_rows']}"
+    )
+    print(
+        f"  Censored Target (>= $500k): {quality['target_capped_count']} "
+        f"({quality['target_capped_pct']:.2f}%)"
+    )
+    print(
+        f"  Extreme Outliers -> AveRooms>20: {quality['extreme_ave_rooms_gt_20']} | "
+        f"AveOccup>15: {quality['extreme_ave_occup_gt_15']}"
+    )
+
+    # 2. Strict Train-Test Split BEFORE any featurization
+    print("\n[2/7] Performing target-decile stratified 80/20 train-test split...")
+    X_train, X_test, y_train, y_test = create_train_test_split(
+        df,
+        test_size=config.test_size,
+        random_state=config.random_state,
+        stratify_by_target_decile=True,
+    )
+    print(f"  Train samples: {len(X_train):,} | Holdout Test samples: {len(X_test):,}")
+
+    # 3. Hyperparameter Optimization via Optuna on Leak-Free CV Folds
+    print(f"\n[3/7] Tuning XGBoost & LightGBM via Optuna ({config.optuna_trials} trials, 5-fold CV)...")
+    folds = _prepare_pretransformed_folds(X_train, y_train, config)
+    xgb_params, xgb_cv_best = tune_xgboost_optuna(folds, config)
+    lgb_params, lgb_cv_best = tune_lightgbm_optuna(folds, config)
+    print(f"  Best XGBoost 5-Fold CV RMSE:  {xgb_cv_best:.4f}")
+    print(f"  Best LightGBM 5-Fold CV RMSE: {lgb_cv_best:.4f}")
+
+    # 4. Full End-to-End 5-Fold Cross-Validation & Holdout Benchmarking
+    print("\n[4/7] Benchmarking 7 end-to-end pipelines (5-Fold CV + Holdout Test + 95% Bootstrap CI)...")
+    candidates = build_candidate_pipelines(xgb_params, lgb_params, config)
+    benchmark_rows = []
+    fitted_pipelines: Dict[str, Any] = {}
+    test_predictions: Dict[str, np.ndarray] = {}
+
+    for name, pipe in candidates.items():
+        print(f"  --> Evaluating {name}...")
+        cv_stats = cross_validate_pipeline(pipe, X_train, y_train, config)
+        pipe.fit(X_train, y_train)
+        y_pred = pipe.predict(X_test)
+        test_stats = compute_regression_metrics(y_test.to_numpy(), y_pred)
+        cis = bootstrap_metric_cis(
+            y_test.to_numpy(),
+            y_pred,
+            n_bootstrap=config.n_bootstrap,
+            random_state=config.random_state,
+        )
+
+        fitted_pipelines[name] = pipe
+        test_predictions[name] = y_pred
+
+        benchmark_rows.append(
+            {
+                "Model": name,
+                "CV_RMSE_Mean": round(cv_stats["cv_rmse_mean"], 4),
+                "CV_RMSE_Std": round(cv_stats["cv_rmse_std"], 4),
+                "CV_R2_Mean": round(cv_stats["cv_r2_mean"], 4),
+                "Test_RMSE": round(test_stats["RMSE"], 4),
+                "RMSE_CI95_Low": round(cis["RMSE_ci95"][0], 4),
+                "RMSE_CI95_High": round(cis["RMSE_ci95"][1], 4),
+                "Test_MAE": round(test_stats["MAE"], 4),
+                "Test_MedAE": round(test_stats["MedAE"], 4),
+                "Test_MAPE_pct": round(test_stats["MAPE_pct"], 2),
+                "Test_R2": round(test_stats["R2"], 4),
+                "R2_CI95_Low": round(cis["R2_ci95"][0], 4),
+                "R2_CI95_High": round(cis["R2_ci95"][1], 4),
+                "CV_Time_Sec": round(cv_stats["cv_time_sec"], 2),
+            }
+        )
+
+    benchmark_df = pd.DataFrame(benchmark_rows).sort_values("Test_RMSE", ascending=True).reset_index(drop=True)
+    print("\n" + "=" * 72)
+    print("Model Benchmark Summary (Sorted by Holdout Test RMSE):")
+    print("=" * 72)
+    display_cols = ["Model", "CV_RMSE_Mean", "Test_RMSE", "Test_MAE", "Test_MAPE_pct", "Test_R2"]
+    print(benchmark_df[display_cols].to_string(index=False))
+    print("=" * 72)
+
+    champion_name = str(benchmark_df.iloc[0]["Model"])
+    champion_pipe = fitted_pipelines[champion_name]
+    champion_pred = test_predictions[champion_name]
+    baseline_pred = test_predictions["Linear Regression (Raw)"]
+    print(
+        f"\n[Champion Selected] {champion_name} | "
+        f"Test RMSE: {benchmark_df.iloc[0]['Test_RMSE']:.4f} | "
+        f"Test R²: {benchmark_df.iloc[0]['Test_R2']:.4f}"
+    )
+
+    # 5. Calibrated Uncertainty Quantification via Conformalized Quantile Regression (CQR)
+    print("\n[5/7] Training & calibrating 90% CQR Prediction Intervals...")
+    low_pipe, high_pipe, cqr_q_hat = train_conformal_quantile_intervals(
+        X_train, y_train, xgb_params, config
+    )
+    test_low = np.maximum(0.0, low_pipe.predict(X_test) - cqr_q_hat)
+    test_high = np.maximum(test_low, high_pipe.predict(X_test) + cqr_q_hat)
+    cqr_eval = evaluate_conformal_intervals(y_test.to_numpy(), test_low, test_high)
+    print(
+        f"  CQR q_hat adjustment: {cqr_q_hat:.4f} | "
+        f"Empirical Test Coverage: {cqr_eval['empirical_coverage'] * 100:.2f}% (Target: 90.0%) | "
+        f"Mean Interval Width: ${cqr_eval['mean_interval_width_100k'] * 100_000:,.0f}"
+    )
+
+    # 6. Slice-Based Error Analysis & TreeSHAP Explainability
+    print("\n[6/7] Running slice-based error analysis & computing TreeSHAP explanations...")
+    slice_df = slice_error_analysis(X_test, y_test, champion_pred)
+    print("\nSlice Error Analysis:")
+    print(slice_df.to_string(index=False))
+
+    # Extract engineered scaled features on test set for exact TreeSHAP
+    fe_step = champion_pipe.named_steps["feature_engineer"]
+    sc_step = champion_pipe.named_steps["scaler"]
+    model_step = champion_pipe.named_steps["model"]
+    tree_for_shap = (
+        model_step.named_estimators_["xgb"]
+        if isinstance(model_step, StackingRegressor)
+        else model_step
+    )
+    X_test_transformed = sc_step.transform(fe_step.transform(X_test))
+
+    plot_model_comparison(benchmark_df, FIGURES_DIR)
+    plot_diagnostics_suite(y_test.to_numpy(), champion_name, champion_pred, baseline_pred, FIGURES_DIR)
+    plot_slice_errors(slice_df, FIGURES_DIR)
+    plot_conformal_intervals(
+        y_test.to_numpy(),
+        champion_pred,
+        test_low,
+        test_high,
+        cqr_eval["empirical_coverage"],
+        FIGURES_DIR,
+    )
+    _, _, shap_df = compute_and_plot_shap(tree_for_shap, X_test_transformed, FIGURES_DIR)
+    print("  Saved all evaluation & SHAP figures to ./figures/")
+
+    # 7. Persist Production Artifacts & Metadata
+    print("\n[7/7] Saving serialized pipelines and training metadata to ./artifacts/...")
+    joblib.dump(champion_pipe, MODEL_PIPELINE_PATH)
+    joblib.dump(low_pipe, QUANTILE_LOW_PATH)
+    joblib.dump(high_pipe, QUANTILE_HIGH_PATH)
+
+    metadata: Dict[str, Any] = {
+        "trained_at_utc": datetime.now(timezone.utc).isoformat(),
+        "dataset": "California Housing (20,640 block groups, 8 raw features)",
+        "engineered_feature_count": len(fe_step.get_feature_names_out()),
+        "engineered_features": [str(f) for f in fe_step.get_feature_names_out()],
+        "data_quality": quality,
+        "champion_model": champion_name,
+        "xgb_best_params": xgb_params,
+        "lgb_best_params": lgb_params,
+        "cqr_q_hat": cqr_q_hat,
+        "cqr_evaluation": cqr_eval,
+        "benchmarks": benchmark_df.to_dict(orient="records"),
+        "slice_errors": slice_df.where(pd.notnull(slice_df), None).to_dict(orient="records"),
+        "top_shap_features": shap_df.head(15).to_dict(orient="records"),
     }
+    with open(METADATA_PATH, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2)
 
-    results = []
-    predictions = {}
+    print(f"  Saved champion pipeline: {MODEL_PIPELINE_PATH}")
+    print(f"  Saved quantile pipelines: {QUANTILE_LOW_PATH.name}, {QUANTILE_HIGH_PATH.name}")
+    print(f"  Saved metadata JSON:     {METADATA_PATH}")
+    print("\nTraining pipeline completed successfully!")
 
-    for name, model in models.items():
-        print(f"  --> Training {name}...")
-        model.fit(X_train_scaled, y_train)
-        y_pred = model.predict(X_test_scaled)
-        predictions[name] = y_pred
-
-        mse = mean_squared_error(y_test, y_pred)
-        rmse = np.sqrt(mse)
-        mae = mean_absolute_error(y_test, y_pred)
-        r2 = r2_score(y_test, y_pred)
-
-        results.append({
-            "Model": name,
-            "RMSE": rmse,
-            "MAE": mae,
-            "R2 Score": r2
-        })
-
-    # 4. Results Comparison
-    results_df = pd.DataFrame(results)
-    print("\n" + "=" * 60)
-    print("Model Evaluation Summary:")
-    print("=" * 60)
-    print(results_df.to_string(index=False))
-    print("=" * 60)
-
-    # 5. Determine Best Model
-    best_row = results_df.sort_values(by="R2 Score", ascending=False).iloc[0]
-    best_name = best_row["Model"]
-    best_model = models[best_name]
-    print(f"\nBest Performing Model: {best_name} (R2: {best_row['R2 Score']:.4f}, RMSE: {best_row['RMSE']:.4f})")
-
-    # 6. Save Model and Scaler
-    model_path = "house_price_model.pkl"
-    scaler_path = "scaler.pkl"
-    joblib.dump(best_model, model_path)
-    joblib.dump(scaler, scaler_path)
-    print(f"\n[Saved] Best model saved to: {model_path}")
-    print(f"[Saved] Scaler saved to: {scaler_path}")
-
-    # Also save inside models/ directory for cleanliness
-    joblib.dump(best_model, os.path.join("models", model_path))
-    joblib.dump(scaler, os.path.join("models", scaler_path))
-
-    # 7. Generate Evaluation Figures
-    print("\n[Step 4] Generating Evaluation Figures in './figures/'...")
-
-    # Residuals and Actual vs Predicted Plot
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-    for ax, (name, y_pred) in zip(axes, predictions.items()):
-        ax.scatter(y_test, y_pred, alpha=0.3, edgecolors='none', color='teal')
-        ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)
-        r2_val = results_df.loc[results_df["Model"] == name, "R2 Score"].values[0]
-        rmse_val = results_df.loc[results_df["Model"] == name, "RMSE"].values[0]
-        ax.set_title(f"{name}\nR2: {r2_val:.3f} | RMSE: {rmse_val:.3f}")
-        ax.set_xlabel("Actual Values ($100k)")
-        ax.set_ylabel("Predicted Values ($100k)")
-        ax.grid(True, linestyle="--", alpha=0.6)
-    save_figure(fig, "actual_vs_predicted.png")
-
-    # Feature Importance for Random Forest & XGBoost
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-    rf_feat_imp = pd.Series(models["Random Forest Regressor"].feature_importances_, index=housing.feature_names).sort_values(ascending=True)
-    rf_feat_imp.plot(kind="barh", ax=axes[0], color="skyblue")
-    axes[0].set_title("Random Forest - Feature Importance")
-    axes[0].set_xlabel("Importance")
-
-    xgb_feat_imp = pd.Series(models["XGBoost Regressor"].feature_importances_, index=housing.feature_names).sort_values(ascending=True)
-    xgb_feat_imp.plot(kind="barh", ax=axes[1], color="salmon")
-    axes[1].set_title("XGBoost - Feature Importance")
-    axes[1].set_xlabel("Importance")
-
-    save_figure(fig, "feature_importance.png")
-
-    print("\nPipeline execution completed successfully!")
 
 if __name__ == "__main__":
     main()
